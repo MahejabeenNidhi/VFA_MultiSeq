@@ -11,7 +11,7 @@ def project(corner_3d, calib):
     corner_2d = np.dot(calib, corner_3d.T)
     corner_2d[0, :] = corner_2d[0, :] / corner_2d[2, :]
     corner_2d[1, :] = corner_2d[1, :] / corner_2d[2, :]
-    corner_2d = np.array(corner_2d, dtype=np.int)
+    corner_2d = np.array(corner_2d, dtype=np.int64)
     return corner_2d[0:2, :].T
 
 def rotz(t):

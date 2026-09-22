@@ -5,7 +5,25 @@ from PIL import Image
 from vfa.utils import to_numpy, grid_rot180
 from vfa.data.multiviewX import MultiviewX
 from vfa.data.wildtrack import Wildtrack
+from vfa.data.mmcows import WORLD_X_MIN_CM, WORLD_Y_MIN_CM
 from .bbox import draw_3DBBox, project
+
+
+def _location_for_projection(obj):
+    """Return the object's location in the raw world frame expected by calib.
+
+    MmCows adapter labels and decoded predictions are stored in VFA's shifted,
+    nonnegative grid frame: (x - WORLD_X_MIN_CM, y - WORLD_Y_MIN_CM, z).
+    The camera matrices consume raw MmCows metric coordinates, so undo that
+    shift only at this visualization boundary.  Training targets are untouched.
+    """
+    location = np.asarray(to_numpy(obj.location), dtype=np.float64).copy()
+    if obj.classname == 'Cow':
+        location[..., 0] += WORLD_X_MIN_CM
+        location[..., 1] += WORLD_Y_MIN_CM
+    return location
+
+
 def visualize_image(image):
     # image format: (3, H, W) value range: (0, 1)
     # reverse tensor to RGB image
@@ -75,7 +93,9 @@ def _format_bboxes(image, calib, objects, cmap=None, ax=None):
         cmap = cm.get_cmap('tab20', len(objects))  
 
     for i, obj in enumerate(objects):
-        ax = draw_3DBBox(ax, to_numpy(obj.dimension), to_numpy(obj.rotation), to_numpy(obj.location), to_numpy(calib), cmap(i), 2)
+        ax = draw_3DBBox(ax, to_numpy(obj.dimension), to_numpy(obj.rotation),
+                         _location_for_projection(obj), to_numpy(calib),
+                         cmap(i), 2)
 
     ax.axis(extents)
     ax.axis(False)
