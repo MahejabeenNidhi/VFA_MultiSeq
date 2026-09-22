@@ -85,6 +85,31 @@ class Wildtrack_Config(object):
     grid_scale = 1.  # make the ratio and scale of grid correspond, which also project the design voxel to image successfully.
 
 
+class MmCows_Config(object):
+    name = 'MmCows'
+
+    mode = '3D'
+
+    root = '/home/mae/BEVine3D/WorldTrack/mmCows_data'
+
+    world_size = (1200, 1925) # length (y extent) and width (x extent), cm
+
+    image_size = (700, 1120)
+
+    resize_size = (700, 1120)
+
+    manifest_name = 'sequences_mmcows_complete.json'
+
+    grid_h = 160 # the height of designed grid
+
+    cube_size = to_numpy((25, 25, 32))
+
+    loss_weight = [1., 1., 1., 1.]
+
+    grid_scale = 1.  # grid coordinates and world coordinates are both cm
+
+
 mc_opts = MultiviewC_Config()
 mx_opts = MultiviewX_Config()
 wt_opts = Wildtrack_Config()
+mmcows_opts = MmCows_Config()
