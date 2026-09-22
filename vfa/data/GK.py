@@ -34,7 +34,7 @@ class RotationGaussianKernel(object):
         # Create a gaussian kernel whose size depends on the maximum side of box's width and length
         # Also, this gaussian kernel is used to store the distribution of target. Because the target is almost 
         # rectangle in MultiviewC, the distribution of gaussian kernel will be elliptical.
-        kernel_size = np.int(np.ceil(np.maximum(std_w, std_l)) * gaussian_kernel_ratio)
+        kernel_size = int(np.ceil(np.maximum(std_w, std_l)) * gaussian_kernel_ratio)
 
         xx, yy = np.meshgrid(np.arange(-kernel_size//2, kernel_size//2 + 1, dtype=heatmap_dtype), np.arange(-kernel_size//2, kernel_size//2 + 1, dtype=heatmap_dtype))
             

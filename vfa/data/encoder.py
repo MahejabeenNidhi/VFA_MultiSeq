@@ -30,9 +30,18 @@ class ObjectEncoder(object):
                      angle_radius=6,
                      topk=100, 
                      kernel_type='RGK'):
-        
-        self.dataset = dataset
-        self.classname = dataset.base.label_names
+
+        # Multi-sequence training passes either a MultiSeqFrameDataset or a
+        # torch.utils.data.Subset of one.  The encoder only needs geometry,
+        # class names and classAverage, which are shared by all sequences;
+        # unwrap to the first per-sequence frameDataset for those metadata.
+        encoder_dataset = dataset
+        while hasattr(encoder_dataset, 'dataset'):
+            encoder_dataset = encoder_dataset.dataset
+        if hasattr(encoder_dataset, 'datasets'):
+            encoder_dataset = encoder_dataset.datasets[0]
+        self.dataset = encoder_dataset
+        self.classname = self.dataset.base.label_names
         self.nclass = len(self.classname)
         # angle range and radius are the params of CSL
         self.angle_range=angle_range
@@ -41,14 +50,14 @@ class ObjectEncoder(object):
         # MultiviewC: world_size: (3900, 3900), cube_LWH: (30, 30, 32); units of all are centimeter(cm)
         # MultiviewX: world_size: (640, 1000), real_world_size:(16m, 25m), cube_LWH:(4, 4, 36)
         # Wildtrack: world: (480, 1440) real_world_size:(12m, 36m)
-        self.world_size, self.cube_LWH = np.array(dataset.world_size), np.array(dataset.cube_LWH)
+        self.world_size, self.cube_LWH = np.array(self.dataset.world_size), np.array(self.dataset.cube_LWH)
         self.grid_size = self.world_size / self.cube_LWH[:2]
         if kernel_type == 'GK' and self.dataset.base.__name__ == 'MultiviewC':
             self.map_kernel = self.gaussian_kernel(map_sigma, map_kernel_size)
         self.maxpool = nn.MaxPool2d(kernel_size=5, padding=2, stride=1)
 
     def batch_encode(self, objects, heatmaps, grids):
-        if self.dataset.base.__name__ in ['MultiviewC', 'MVM3D']:
+        if self.dataset.base.__name__ in ['MultiviewC', 'MVM3D', 'MmCows']:
             # Encode element by element
             batch_encoded = [self.encode3d(objs, heatmap, grid) \
                         for objs, heatmap, grid in zip(objects, heatmaps, grids)]
@@ -149,11 +158,23 @@ class ObjectEncoder(object):
         location_offsets = grid.new_zeros(2, *grid.size()[:-1])
         return mask, heatmaps, location_offsets
 
-    def _assign_to_grid(self, location, grid):
+    def _location_to_grid(self, location, grid):
+        """Convert (x, y) world locations to (x_cell, y_cell) coordinates."""
         location = location[..., :2]
+        if self.dataset.base.__name__ == 'MmCows':
+            # world_size is VFA's (length=y extent, width=x extent), while
+            # Obj3D.location is (x, y).  Keep those orders explicit: the
+            # generic expression below silently transposes this non-square
+            # world and assigns cows to the wrong cells.
+            world_xy = location.new(self.world_size[::-1].copy()).view(-1, 2)
+            grid_xy = location.new([grid.size(1), grid.size(0)]).view(-1, 2)
+            return location / world_xy * grid_xy
         # normalize locations
-        location = location / location.new(self.world_size).view(-1, 2) * location.new([grid.size()[:2]]) 
-        foreground = grid.new_zeros(1, *grid.size()[:-1]) # B, 1, H, W
+        return location / location.new(self.world_size).view(-1, 2) * location.new([grid.size()[:2]])
+
+    def _assign_to_grid(self, location, grid):
+        location = self._location_to_grid(location, grid)
+        foreground = grid.new_zeros(1, *grid.size()[:-1])
         indices = list()
         for loc in location:
             coord_x, coord_y = int(loc[0]), int(loc[1])
@@ -173,8 +194,7 @@ class ObjectEncoder(object):
     def _encode_location(self, location, grid):
         # z coordinate value of target is zero by default
         # thus, location offset is (2, H, W)
-        location = location[..., :2]
-        location = location / location.new(self.world_size).view(-1, 2) * location.new([grid.size()[:2]])# normalize location
+        location = self._location_to_grid(location, grid)
         location_offset = grid.new_zeros((1, 2, *grid.size()[:-1]))
         for loc in location:
             coord_x, coord_y = int(loc[0]), int(loc[1])
@@ -183,6 +203,12 @@ class ObjectEncoder(object):
             if self.dataset.base.__name__ == Wildtrack.__name__:
                 location_offset[:, 0, coord_x, coord_y] = offset_x
                 location_offset[:, 1, coord_x, coord_y] = offset_y
+            elif self.dataset.base.__name__ == 'MmCows':
+                # decode3d consumes channel 0 as ty (row/y) and channel 1
+                # as tx (column/x).  Store the offsets in that order so
+                # encode -> decode is closed-loop on a non-square grid.
+                location_offset[:, 0, coord_y, coord_x] = offset_y
+                location_offset[:, 1, coord_y, coord_x] = offset_x
             else:
                 location_offset[:, 0, coord_y, coord_x] = offset_x
                 location_offset[:, 1, coord_y, coord_x] = offset_y
@@ -306,7 +332,7 @@ class ObjectEncoder(object):
     
     def batch_decode(self, pred, cls_thresh):
         # for MultiviewC, MVM3D dataset
-        if self.dataset.base.__name__ in ['MultiviewC', 'MVM3D']:
+        if self.dataset.base.__name__ in ['MultiviewC', 'MVM3D', 'MmCows']:
             batch = self.decode3d(pred, cls_thresh)
             objects = list()
             for i in range(len(batch['conf'])):

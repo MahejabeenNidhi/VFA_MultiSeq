@@ -19,7 +19,10 @@ class frameDataset(VisionDataset):
     def __init__(self, base:MultiviewC, transform = ToTensor(), 
                 split='train', train_ratio = 0.9):
         super().__init__(base.root, transform=transform )
-        assert split in ['train', 'val'], 'split mode error'
+        assert split in ['train', 'val', 'all'], 'split mode error'
+        # 'all' = every frame of the sequence (used by round-trip tests);
+        # stored under a name that does NOT shadow the split() method.
+        self.split_name = split
         # the unit of grid size and grid res is centimeter
         self.world_size, self.cube_LWH, self.reduced_grid_size = base.world_size, base.cube_LWH, base.reduced_grid_size
         self.base, self.root, self.num_cam, self.num_frame = base, base.root, base.num_cam, base.num_frame
@@ -30,11 +33,13 @@ class frameDataset(VisionDataset):
                 self.frame_range = range(0, int(self.num_frame * train_ratio), 5)
             else:
                 self.frame_range = range(0, int(self.num_frame * train_ratio))
-        else:
+        elif split == 'val':
             if base.__name__ == Wildtrack.__name__:
                 self.frame_range = range(int(self.num_frame * train_ratio), self.num_frame, 5)
             else:
                 self.frame_range = range(int(self.num_frame * train_ratio), self.num_frame)
+        else:  # 'all'
+            self.frame_range = range(self.num_frame)
         
         
         self.classAverage = base.classAverage
@@ -45,6 +50,9 @@ class frameDataset(VisionDataset):
     
     def split(self, labels, heatmaps):
         assert len(labels) == len(heatmaps), 'the number of labels must be equal to that of heatmaps'
+        if self.split_name == 'all':
+            # every frame, unchanged
+            return labels, heatmaps
         if self.base.__name__ == Wildtrack.__name__:
             labels = [labels[id] for id, i in enumerate(range(0, self.num_frame, 5)) if i in self.frame_range]
             heatmaps = [heatmaps[id] for id, i in enumerate(range(0, self.num_frame, 5)) if i in self.frame_range]
