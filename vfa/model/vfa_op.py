@@ -28,10 +28,17 @@ def mx_convert(grid, scale=40.):
     return grid / scale
 
 # Wildtrack
-def wt_convert(grid, scale=2.5):
-    grid[..., 0] = grid[..., 0] * scale - 300   # x
-    grid[..., 1] = grid[..., 1] * scale - 900   # y
-    grid[..., 2] = grid[..., 2] * scale         # z
+def wt_convert(grid, scale=1.):
+    grid[..., 0] = grid[..., 0] * scale - 300.0  # x
+    grid[..., 1] = grid[..., 1] * scale - 300.0  # y
+    grid[..., 2] = grid[..., 2] * scale          # z
+    return grid
+
+# MmCows
+def mmcows_convert(grid, scale=1.):
+    grid[..., 0] = grid[..., 0] * scale - 879.0  # x
+    grid[..., 1] = grid[..., 1] * scale - 646.0  # y
+    grid[..., 2] = grid[..., 2] * scale          # z
     return grid
 
 def convert(grid, args):
@@ -41,6 +48,8 @@ def convert(grid, args):
         coord = mx_convert(grid)
     elif args.data == Wildtrack.__name__:
         coord = wt_convert(grid)
+    elif args.data == 'MmCows':
+        coord = mmcows_convert(grid)
     return coord
 
 class VFA(nn.Module):
